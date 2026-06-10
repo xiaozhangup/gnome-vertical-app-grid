@@ -18,6 +18,14 @@
       <default>true</default>
     </key>
 
+    <key name="two-column-groups" type="b">
+      <default>false</default>
+    </key>
+
+    <key name="group-apps" type="b">
+      <default>true</default>
+    </key>
+
     <key name="favorites-sorting" type="s">
       <default>'dash'</default>
     </key>
@@ -28,6 +36,10 @@
 
     <key name="icon-spacing" type="i">
       <default>24</default>
+    </key>
+
+    <key name="hidden-apps" type="as">
+      <default>[]</default>
     </key>
 
   </schema>

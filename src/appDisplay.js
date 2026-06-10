@@ -17,6 +17,96 @@ function easeOutCubic(t) {
   return (--t) * t * t + 1;
 }
 
+const PINYIN_BOUNDARIES = [
+  ['A', '阿'],
+  ['B', '八'],
+  ['C', '嚓'],
+  ['D', '搭'],
+  ['E', '蛾'],
+  ['F', '发'],
+  ['G', '噶'],
+  ['H', '哈'],
+  ['J', '击'],
+  ['K', '喀'],
+  ['L', '垃'],
+  ['M', '妈'],
+  ['N', '拿'],
+  ['O', '哦'],
+  ['P', '啪'],
+  ['Q', '期'],
+  ['R', '然'],
+  ['S', '撒'],
+  ['T', '塌'],
+  ['W', '挖'],
+  ['X', '昔'],
+  ['Y', '压'],
+  ['Z', '匝']
+];
+
+const MAX_BALANCED_COLUMN_LEAD = 2;
+
+let pinyinCollator = null;
+
+function getPinyinCollator() {
+  if (pinyinCollator === null) {
+    pinyinCollator = new Intl.Collator('zh-Hans-CN-u-co-pinyin', { sensitivity: 'base' });
+  }
+
+  return pinyinCollator;
+}
+
+function isCjkCharacter(char) {
+  const code = char.codePointAt(0);
+
+  return (code >= 0x3400 && code <= 0x4dbf) ||
+    (code >= 0x4e00 && code <= 0x9fff) ||
+    (code >= 0x20000 && code <= 0x2a6df) ||
+    (code >= 0x2a700 && code <= 0x2b73f) ||
+    (code >= 0x2b740 && code <= 0x2b81f) ||
+    (code >= 0x2b820 && code <= 0x2ceaf);
+}
+
+function getChineseInitial(char) {
+  const collator = getPinyinCollator();
+  let initial = '#';
+
+  for (const [letter, boundary] of PINYIN_BOUNDARIES) {
+    if (collator.compare(char, boundary) < 0) {
+      break;
+    }
+
+    initial = letter;
+  }
+
+  return initial;
+}
+
+function getAppInitial(appInfo) {
+  const name = appInfo.get_name() || appInfo.get_id();
+
+  for (const char of name.trim()) {
+    const ascii = char.normalize('NFD').match(/[A-Za-z]/);
+
+    if (ascii) {
+      return ascii[0].toUpperCase();
+    }
+
+    if (isCjkCharacter(char)) {
+      return getChineseInitial(char);
+    }
+
+    if (/\d/.test(char)) {
+      return '#';
+    }
+  }
+
+  return '#';
+}
+
+function compareAppNames(a, b) {
+  return a.get_name().localeCompare(b.get_name(), undefined, { sensitivity: 'base' });
+}
+
 export const VerticalAppDisplay = GObject.registerClass(
 class VerticalAppDisplay extends St.Widget {
   _init(settings) {
@@ -29,32 +119,17 @@ class VerticalAppDisplay extends St.Widget {
       reactive: true
     });
 
-    this._favoritesLabel = new St.Label({
-      style_class: 'search-statustext',
-      text: _('Favorites')
-    });
-
-    this._favoritesView = new St.Viewport({
-      layout_manager: new VerticalLayout(settings)
-    });
-
-    this._mainLabel = new St.Label({
-      style_class: 'search-statustext',
-      text: _('All Apps')
-    });
-
-    this._mainView = new St.Viewport({
-      layout_manager: new VerticalLayout(settings)
-    });
-
     this._scrollView = new VerticalScrollView(settings);
-
-    this._scrollView.add_child(this._favoritesLabel);
-    this._scrollView.add_child(this._favoritesView);
-    this._scrollView.add_child(this._mainLabel);
-    this._scrollView.add_child(this._mainView);
-
     this.add_child(this._scrollView);
+
+    this._sections = [];
+    this._appIcons = [];
+    this._groupColumnsBox = null;
+    this._groupColumns = [];
+    this._viewModeRow = null;
+    this._viewModeSwitch = null;
+    this._viewModeButtons = null;
+    this._hasFavoritesSection = false;
 
     this._appSystem = Shell.AppSystem.get_default();
     this._appUsage = Shell.AppUsage.get_default();
@@ -94,6 +169,10 @@ class VerticalAppDisplay extends St.Widget {
         case 'app-sorting':
         case 'favorites-section':
         case 'favorites-sorting':
+        case 'group-apps':
+        case 'hidden-apps':
+        case 'two-column-groups':
+          this._updateViewModeSwitch(true);
           return this._redisplay();
 
         case 'icon-spacing':
@@ -105,41 +184,147 @@ class VerticalAppDisplay extends St.Widget {
     }, this);
   }
 
-  _addAppIcons() {
-    const iconSize = this._settings.get_int('icon-size');
-    const favSection = this._settings.get_boolean('favorites-section');
+  _addViewModeSwitch() {
+    if (this._viewModeSwitch) {
+      this._updateViewModeSwitch();
+      return;
+    }
 
-    this._appIcons = this._loadApps().map(appId => {
-      const app = this._appSystem.lookup_app(appId);
-      const appIcon = new AppDisplay.AppIcon(app, { isDraggable: false })
-      const isFav = this._appFavorites.isFavorite(appId);
-
-      appIcon.icon.setIconSize(iconSize);
-
-      if (favSection && isFav) {
-        this._favoritesView.add_child(appIcon);
-      } else {
-        this._mainView.add_child(appIcon);
-      }
-
-      return appIcon;
+    const row = new St.Widget({
+      layout_manager: new Clutter.BinLayout(),
+      x_expand: false,
+      y_expand: false
     });
 
-    const showFavSection = this._favoritesView.get_children().length > 0;
-    const showMainSection = this._mainView.get_children().length > 0;
-    const showMainLabel = showFavSection && showMainSection;
+    const actor = new St.BoxLayout({
+      vertical: false,
+      x_align: Clutter.ActorAlign.END,
+      x_expand: true,
+      y_expand: false
+    });
 
-    this._favoritesLabel.visible = showFavSection;
-    this._favoritesView.visible = showFavSection;
-    this._mainLabel.visible = showMainLabel;
-    this._mainView.visible = showMainSection;
+    const allButton = this._createViewModeButton(_('All'), false);
+    const groupedButton = this._createViewModeButton('A-Z', true);
+
+    actor.add_child(allButton);
+    actor.add_child(groupedButton);
+
+    row.add_child(actor);
+
+    this._viewModeRow = row;
+    this._viewModeSwitch = actor;
+    this._viewModeButtons = {
+      all: allButton,
+      grouped: groupedButton
+    };
+
+    this._scrollView.add_child(row);
+    this._updateViewModeSwitch();
+  }
+
+  _createViewModeButton(label, grouped) {
+    const button = new St.Button({
+      label,
+      can_focus: true,
+      reactive: true
+    });
+
+    button.connect('clicked', () => {
+      this._settings.set_boolean('group-apps', grouped);
+    });
+
+    return button;
+  }
+
+  _updateViewModeSwitch(animate = false) {
+    if (!this._viewModeButtons) {
+      return;
+    }
+
+    const groupApps = this._settings.get_boolean('group-apps');
+
+    const activeStyle = [
+      'background-color: rgba(255, 255, 255, 0.30);',
+      'border-radius: 999px;',
+      'font-weight: bold;',
+      'padding: 5px 12px;',
+      'width: 66px;'
+    ].join(' ');
+
+    const inactiveStyle = [
+      'background-color: transparent;',
+      'border-radius: 999px;',
+      'padding: 5px 12px;',
+      'width: 66px;'
+    ].join(' ');
+
+    this._viewModeButtons.all.set_style(groupApps ? inactiveStyle : activeStyle);
+    this._viewModeButtons.grouped.set_style(groupApps ? activeStyle : inactiveStyle);
+
+    this._fadeViewModeButton(this._viewModeButtons.all, !groupApps, animate);
+    this._fadeViewModeButton(this._viewModeButtons.grouped, groupApps, animate);
+  }
+
+  _fadeViewModeButton(button, active, animate) {
+    const opacity = active ? 255 : 170;
+
+    if (!animate) {
+      button.opacity = opacity;
+      return;
+    }
+
+    button.ease({
+      opacity,
+      duration: 160,
+      mode: Clutter.AnimationMode.EASE_OUT_QUAD
+    });
+  }
+
+  _addAppIcons() {
+    const favSection = this._settings.get_boolean('favorites-section');
+    const groupApps = this._settings.get_boolean('group-apps');
+    const twoColumnGroups = this._settings.get_boolean('two-column-groups');
+    const { favs, apps, allApps } = this._loadApps();
+
+    this._hasFavoritesSection = groupApps && favSection && favs.length > 0;
+
+    this._addViewModeSwitch();
+
+    if (!groupApps) {
+      const section = this._createSection(null);
+
+      allApps.forEach(appInfo => this._addAppIcon(appInfo, section.view));
+      this._updateLabelMargins();
+
+      return;
+    }
+
+    if (this._hasFavoritesSection) {
+      const section = this._createSection(_('Favorites'));
+
+      favs.forEach(appInfo => this._addAppIcon(appInfo, section.view));
+    }
+
+    const groupedApps = this._groupApps(apps);
+    const groupParents = this._getGroupSectionParents(groupedApps, twoColumnGroups);
+
+    groupedApps.forEach(([initial, appInfos], index) => {
+      const parent = groupParents[index];
+      const section = this._createSection(initial, parent.actor, parent.key, parent.columnsScale);
+
+      appInfos.forEach(appInfo => this._addAppIcon(appInfo, section.view));
+    });
+
+    this._updateLabelMargins();
   }
 
   _loadApps() {
     const installedApps = this._appSystem.get_installed();
+    const hiddenApps = new Set(this._settings.get_strv('hidden-apps'));
 
     const favs = [];
     const apps = [];
+    const allApps = [];
 
     // Filter out hidden apps and split off favorites
     const favSection = this._settings.get_boolean('favorites-section');
@@ -148,7 +333,9 @@ class VerticalAppDisplay extends St.Widget {
       const appId = appInfo.get_id();
       const isFav = this._appFavorites.isFavorite(appId);
 
-      if (this._parentalControls.shouldShowApp(appInfo)) {
+      if (!hiddenApps.has(appId) && this._parentalControls.shouldShowApp(appInfo)) {
+        allApps.push(appInfo);
+
         if (favSection && isFav) {
           favs.push(appInfo);
         } else {
@@ -170,31 +357,180 @@ class VerticalAppDisplay extends St.Widget {
           return this._appUsage.compare(a.get_id(), b.get_id()) ?? 0;
 
         case 'alphabetical': default:
-          return a.get_name().toLowerCase().localeCompare(b.get_name().toLowerCase());
+          return compareAppNames(a, b);
       }
     });
 
     // Sort apps
     const appSorting = this._settings.get_string('app-sorting');
-
-    apps.sort((a, b) => {
+    const sortApps = (a, b) => {
       switch (appSorting) {
         case 'usage':
           return this._appUsage.compare(a.get_id(), b.get_id()) ?? 0;
 
         case 'alphabetical': default:
-          return a.get_name().toLowerCase().localeCompare(b.get_name().toLowerCase());
+          return compareAppNames(a, b);
       }
+    };
+
+    apps.sort(sortApps);
+    allApps.sort(sortApps);
+
+    return { favs, apps, allApps };
+  }
+
+  _createSection(title, parent = this._scrollView, parentKey = 'main', columnsScale = 1) {
+    const actor = new St.BoxLayout({
+      vertical: true,
+      x_expand: false,
+      y_expand: false
     });
 
-    return [...favs, ...apps].map(appInfo => appInfo.get_id());
+    const label = title
+      ? new St.Label({
+        style_class: 'search-statustext',
+        text: title
+      })
+      : null;
+
+    const view = new St.Viewport({
+      layout_manager: new VerticalLayout(this._settings, columnsScale)
+    });
+
+    const section = { actor, label, view, parentKey };
+
+    this._sections.push(section);
+    if (label) {
+      actor.add_child(label);
+    }
+
+    actor.add_child(view);
+    parent.add_child(actor);
+
+    return section;
+  }
+
+  _getGroupSectionParents(groups, twoColumnGroups) {
+    if (!twoColumnGroups) {
+      return groups.map(() => ({
+        actor: this._scrollView,
+        key: 'main',
+        columnsScale: 1
+      }));
+    }
+
+    this._ensureGroupColumns();
+
+    const columns = this._getScaledColumns(0.5);
+    const heights = [0, 0];
+    const counts = [0, 0];
+
+    return groups.map(([_initial, appInfos]) => {
+      let columnIndex = heights[0] <= heights[1] ? 0 : 1;
+      const otherColumnIndex = columnIndex === 0 ? 1 : 0;
+
+      if (counts[columnIndex] - counts[otherColumnIndex] >= MAX_BALANCED_COLUMN_LEAD) {
+        columnIndex = otherColumnIndex;
+      }
+
+      counts[columnIndex]++;
+      heights[columnIndex] += 1 + Math.ceil(appInfos.length / columns);
+
+      return {
+        actor: this._groupColumns[columnIndex],
+        key: `group-column-${columnIndex}`,
+        columnsScale: 0.5
+      };
+    });
+  }
+
+  _ensureGroupColumns() {
+    if (this._groupColumnsBox) {
+      return;
+    }
+
+    this._groupColumnsBox = new St.BoxLayout({
+      vertical: false,
+      x_align: Clutter.ActorAlign.CENTER,
+      x_expand: false,
+      y_expand: false
+    });
+
+    this._groupColumns = [0, 1].map(() => new St.BoxLayout({
+      vertical: true,
+      x_expand: false,
+      y_expand: false
+    }));
+
+    this._groupColumns.forEach(column => {
+      this._groupColumnsBox.add_child(column);
+    });
+
+    this._scrollView.add_child(this._groupColumnsBox);
+  }
+
+  _getScaledColumns(columnsScale) {
+    return Math.max(1, Math.floor(this._settings.get_int('columns') * columnsScale));
+  }
+
+  _addAppIcon(appInfo, view) {
+    const iconSize = this._settings.get_int('icon-size');
+    const app = this._appSystem.lookup_app(appInfo.get_id());
+    const appIcon = new AppDisplay.AppIcon(app, { isDraggable: false });
+
+    appIcon.icon.setIconSize(iconSize);
+    view.add_child(appIcon);
+    this._appIcons.push(appIcon);
+  }
+
+  _groupApps(apps) {
+    const groups = new Map();
+
+    apps.forEach(appInfo => {
+      const initial = getAppInitial(appInfo);
+
+      if (!groups.has(initial)) {
+        groups.set(initial, []);
+      }
+
+      groups.get(initial).push(appInfo);
+    });
+
+    return [...groups.entries()].sort(([a], [b]) => {
+      if (a === '#') {
+        return 1;
+      }
+
+      if (b === '#') {
+        return -1;
+      }
+
+      return a.localeCompare(b);
+    });
+  }
+
+  _clearSections() {
+    this._appIcons.forEach(appIcon => appIcon.destroy());
+
+    this._sections.forEach(({ actor }) => {
+      actor.destroy();
+    });
+
+    if (this._groupColumnsBox) {
+      this._groupColumnsBox.destroy();
+    }
+
+    this._appIcons = [];
+    this._sections = [];
+    this._groupColumnsBox = null;
+    this._groupColumns = [];
+    this._hasFavoritesSection = false;
   }
 
   _redisplay() {
     this._animateRedisplay(() => {
       this._redisplayLater = this._laters.add(Meta.LaterType.IDLE, () => {
-        this._favoritesView.destroy_all_children();
-        this._mainView.destroy_all_children();
+        this._clearSections();
 
         this._addAppIcons();
         this._animateRedisplay();
@@ -203,19 +539,98 @@ class VerticalAppDisplay extends St.Widget {
   }
 
   _animateRedisplay(onComplete) {
-    this._scrollView.ease({
-      onComplete,
-      opacity: onComplete ? 0 : 255,
-      duration: SIDE_CONTROLS_ANIMATION_TIME,
-      mode: Clutter.AnimationMode.EASE_OUT_QUAD
+    const actors = this._getRedisplayActors();
+
+    if (actors.length === 0) {
+      onComplete?.();
+      return;
+    }
+
+    let pending = actors.length;
+
+    actors.forEach(actor => {
+      if (!onComplete) {
+        actor.opacity = 0;
+      }
+
+      actor.ease({
+        onComplete: onComplete
+          ? () => {
+            pending--;
+
+            if (pending === 0) {
+              onComplete();
+            }
+          }
+          : null,
+        opacity: onComplete ? 0 : 255,
+        duration: SIDE_CONTROLS_ANIMATION_TIME,
+        mode: Clutter.AnimationMode.EASE_OUT_QUAD
+      });
     });
+  }
+
+  _getRedisplayActors() {
+    return this._scrollView.getContentChildren()
+      .filter(actor => actor !== this._viewModeRow);
   }
 
   _updateLabelMargins() {
     const spacing = this._settings.get_int('icon-spacing');
+    const sectionKeys = new Set();
 
-    this._favoritesLabel.set_style(`margin: 0 0 ${spacing}px 0;`);
-    this._mainLabel.set_style(`margin: ${spacing * 2}px 0 ${spacing}px 0;`);
+    if (this._viewModeSwitch) {
+      this._viewModeSwitch.set_style([
+        'background-color: rgba(255, 255, 255, 0.16);',
+        'border-radius: 999px;',
+        'padding: 4px;',
+        'spacing: 4px;'
+      ].join(' '));
+    }
+
+    if (this._viewModeRow) {
+      this._viewModeRow.set_style(`margin: 0 0 ${spacing * 2}px 0;`);
+    }
+
+    this._sections.forEach(({ actor, label, parentKey }) => {
+      const isFirstInParent = !sectionKeys.has(parentKey);
+      const top = isFirstInParent ? 0 : spacing * 2;
+
+      sectionKeys.add(parentKey);
+      actor.set_style(`margin: ${top}px 0 0 0;`);
+
+      if (label) {
+        label.set_style(`margin: 0 0 ${spacing}px 0;`);
+      }
+    });
+
+    if (this._groupColumnsBox) {
+      const top = this._hasFavoritesSection ? spacing * 2 : 0;
+
+      this._groupColumnsBox.set_style(`spacing: ${spacing}px; margin: ${top}px 0 0 0;`);
+    }
+
+    this._updateViewModeRowWidth();
+  }
+
+  _updateViewModeRowWidth() {
+    if (!this._viewModeRow) {
+      return;
+    }
+
+    let width = 0;
+
+    if (this._groupColumnsBox) {
+      width = this._groupColumnsBox.get_preferred_width(-1)[1];
+    } else {
+      this._sections.forEach(({ actor }) => {
+        width = Math.max(width, actor.get_preferred_width(-1)[1]);
+      });
+    }
+
+    if (width > 0) {
+      this._viewModeRow.set_width(width);
+    }
   }
 
   _updateIconSize() {
@@ -296,9 +711,7 @@ class VerticalAppDisplay extends St.Widget {
       this._laters.remove(this._redisplayLater);
     }
 
-    for (const appIcon of this._appIcons) {
-      appIcon.destroy();
-    }
+    this._clearSections();
 
     super.destroy();
   }
@@ -346,6 +759,10 @@ class VerticalScrollView extends St.ScrollView {
 
   add_child(child) {
     this._scrollBox.add_child(child);
+  }
+
+  getContentChildren() {
+    return this._scrollBox.get_children();
   }
 
   scrollToChild(child) {
@@ -502,29 +919,37 @@ class VerticalScrollView extends St.ScrollView {
 
 const VerticalLayout = GObject.registerClass(
 class VerticalLayout extends Clutter.LayoutManager {
-  _init(settings) {
+  _init(settings, columnsScale = 1) {
     super._init();
 
     this._settings = settings;
+    this._columnsScale = columnsScale;
+    this._reserveColumns = columnsScale < 1;
 
     settings.connectObject('changed', (_, key) => {
       if (['columns', 'icon-spacing'].includes(key)) {
-        this._columns = settings.get_int('columns');
+        this._columns = this._getColumns();
         this._spacing = settings.get_int('icon-spacing');
 
         this.layout_changed();
       }
     }, this);
 
-    this._columns = settings.get_int('columns');
+    this._columns = this._getColumns();
     this._spacing = settings.get_int('icon-spacing');
+  }
+
+  _getColumns() {
+    return Math.max(1, Math.floor(this._settings.get_int('columns') * this._columnsScale));
   }
 
   vfunc_get_preferred_width(container, _forHeight) {
     const children = container.get_children();
     const childSize = this._getMinChildSize(children);
 
-    const columns = Math.min(children.length, this._columns);
+    const columns = this._reserveColumns
+      ? this._columns
+      : Math.min(children.length, this._columns);
     const size = columns * childSize + (columns - 1) * this._spacing;
 
     if (columns) {

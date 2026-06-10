@@ -3,6 +3,7 @@ import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as AppMenu from 'resource:///org/gnome/shell/ui/appMenu.js';
 import * as OverviewControls from 'resource:///org/gnome/shell/ui/overviewControls.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
 import { InjectionManager } from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -15,6 +16,7 @@ export default class VerticalAppGridExtension extends Extension {
     const overviewControlsProto = OverviewControls.ControlsManager.prototype;
 
     this._settings = this.getSettings();
+    const settings = this._settings;
     this._vertAppDisplay = new VerticalAppDisplay(this._settings);
     this._injectionManager = new InjectionManager();
 
@@ -73,6 +75,26 @@ export default class VerticalAppGridExtension extends Extension {
 
         this._toggleFavoriteItem.label.text = text;
       }
+    });
+
+    // Add an action to hide apps from the vertical app grid
+    this._injectionManager.overrideMethod(AppMenu.AppMenu.prototype, '_updateDetailsVisibility', originalFn => function () {
+      originalFn.call(this);
+
+      if (this._verticalAppGridHideItem) {
+        return;
+      }
+
+      this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+      this._verticalAppGridHideItem = this.addAction(_('Hide App'), () => {
+        const hiddenApps = settings.get_strv('hidden-apps');
+        const appId = this._app.get_id();
+
+        if (!hiddenApps.includes(appId)) {
+          hiddenApps.push(appId);
+          settings.set_strv('hidden-apps', hiddenApps);
+        }
+      });
     });
   }
 

@@ -50,6 +50,12 @@
             <property name="title" translatable="yes">Show Favorites Section</property>
           </object>
         </child>
+
+        <child>
+          <object class="AdwSwitchRow" id="two-column-groups">
+            <property name="title" translatable="yes">Two-column Groups</property>
+          </object>
+        </child>
       </object>
     </child>
 
