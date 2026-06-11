@@ -577,6 +577,8 @@ class VerticalAppDisplay extends St.Widget {
 
   _updateLabelMargins() {
     const spacing = this._settings.get_int('icon-spacing');
+    const viewModeGap = Math.floor(spacing / 2);
+    const bottomGap = spacing * 2;
     const sectionKeys = new Set();
 
     if (this._viewModeSwitch) {
@@ -589,15 +591,17 @@ class VerticalAppDisplay extends St.Widget {
     }
 
     if (this._viewModeRow) {
-      this._viewModeRow.set_style(`margin: 0 0 ${spacing * 2}px 0;`);
+      this._viewModeRow.set_style(`margin: 0 0 ${viewModeGap}px 0;`);
     }
 
-    this._sections.forEach(({ actor, label, parentKey }) => {
+    this._sections.forEach(({ actor, label, parentKey }, index) => {
       const isFirstInParent = !sectionKeys.has(parentKey);
+      const isLastSection = index === this._sections.length - 1;
       const top = isFirstInParent ? 0 : spacing * 2;
+      const bottom = isLastSection ? bottomGap : 0;
 
       sectionKeys.add(parentKey);
-      actor.set_style(`margin: ${top}px 0 0 0;`);
+      actor.set_style(`margin: ${top}px 0 ${bottom}px 0;`);
 
       if (label) {
         label.set_style(`margin: 0 0 ${spacing}px 0;`);
@@ -607,7 +611,7 @@ class VerticalAppDisplay extends St.Widget {
     if (this._groupColumnsBox) {
       const top = this._hasFavoritesSection ? spacing * 2 : 0;
 
-      this._groupColumnsBox.set_style(`spacing: ${spacing}px; margin: ${top}px 0 0 0;`);
+      this._groupColumnsBox.set_style(`spacing: ${spacing}px; margin: ${top}px 0 ${bottomGap}px 0;`);
     }
 
     this._updateViewModeRowWidth();
