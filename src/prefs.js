@@ -18,6 +18,7 @@ export default class EssentialTweaksPreferences extends ExtensionPreferences {
       ['animate-scroll', 'active'],
       ['columns', 'value'],
       ['favorites-section', 'active'],
+      ['horizontal-scroll', 'active'],
       ['icon-size', 'value'],
       ['icon-spacing', 'value'],
       ['two-column-groups', 'active']
@@ -27,8 +28,8 @@ export default class EssentialTweaksPreferences extends ExtensionPreferences {
       settings.bind(key, builder.get_object(key), property, Gio.SettingsBindFlags.DEFAULT);
     });
 
-    this._bindComboRow(builder, settings, 'app-sorting', ['usage', 'alphabetical']);
-    this._bindComboRow(builder, settings, 'favorites-sorting', ['dash', 'usage', 'alphabetical']);
+    this._bindComboRow(builder, settings, 'app-sorting', ['usage', 'alphabetical', 'manual']);
+    this._bindComboRow(builder, settings, 'favorites-sorting', ['dash', 'usage', 'alphabetical', 'manual']);
 
     this._hiddenAppsGroup = new Adw.PreferencesGroup({
       title: _('Hidden Apps')
@@ -48,12 +49,18 @@ export default class EssentialTweaksPreferences extends ExtensionPreferences {
 
   _bindComboRow(builder, settings, key, values) {
     const comboRow = builder.get_object(key);
+    const sync = () => comboRow.set_selected(Math.max(0, values.indexOf(settings.get_string(key))));
+
+    sync();
+    const changedId = settings.connect(`changed::${key}`, sync);
+    comboRow.connect('destroy', () => settings.disconnect(changedId));
 
     comboRow.connect('notify::selected', () => {
-      settings.set_string(key, values[comboRow.selected]);
+      const value = values[comboRow.selected];
+      if (value !== undefined && value !== settings.get_string(key)) {
+        settings.set_string(key, value);
+      }
     });
-
-    comboRow.set_selected(values.indexOf(settings.get_string(key)));
   }
 
   _populateHiddenAppsGroup(settings) {

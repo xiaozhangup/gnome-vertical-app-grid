@@ -44,11 +44,14 @@ msgstr "Exibir seção de favoritos"
 msgid "Smooth Scrolling"
 msgstr "Rolagem suave"
 
+msgid "Horizontal Scrolling"
+msgstr "Rolagem horizontal"
+
 msgid "Customization"
 msgstr "Personalização"
 
-msgid "Columns"
-msgstr "Colunas"
+msgid "Icons per Row / Column"
+msgstr "Ícones por linha / coluna"
 
 msgid "Icon Size"
 msgstr "Tamanho dos ícones"

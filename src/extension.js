@@ -24,10 +24,24 @@ export default class VerticalAppGridExtension extends Extension {
     this._overviewControls = Main.overview._overview._controls;
     this._overviewLayoutManager = this._overviewControls.layout_manager;
 
+    // Publish our folders for native observers, but let native redisplay own only its icons.
+    this._injectionManager.overrideMethod(this._overviewControls.appDisplay, '_redisplay', originalFn => function (...args) {
+      extension._vertAppDisplay._unpublishFolders();
+      return originalFn.apply(this, args);
+    });
+    this._injectionManager.overrideMethod(this._overviewControls.appDisplay, '_loadApps', originalFn => function (...args) {
+      const apps = originalFn.apply(this, args);
+      extension._vertAppDisplay._publishFolders(false);
+      return apps;
+    });
+    this._vertAppDisplay.registerFolders(this._overviewControls.appDisplay);
+
     this._overviewControls.add_child(this._vertAppDisplay);
 
     // Steal the layout of the original app display
     this._overviewLayoutManager._appDisplay = this._vertAppDisplay;
+    this._overviewControls.appDisplay.hide();
+    this._overviewControls.appDisplay._disconnectDnD();
 
     this._injectionManager.overrideMethod(overviewControlsProto, '_updateAppDisplayVisibility', () => function (params = null) {
       if (!params) {
@@ -46,9 +60,7 @@ export default class VerticalAppGridExtension extends Extension {
         global.stage.set_key_focus(extension._vertAppDisplay);
       }
 
-      // Disable drag and drop on the original app grid to prevent internal
-      // errors when rearranging app icons in the dash
-      extension._overviewControls.appDisplay._disconnectDnD();
+      this.appDisplay.hide();
     });
 
     // Fade out the app display when the search becomes active
@@ -105,8 +117,7 @@ export default class VerticalAppGridExtension extends Extension {
     this._injectionManager.clear();
     this._vertAppDisplay.destroy();
 
-    this._overviewControls.appDisplay._disconnectDnD();
-    this._overviewControls.appDisplay._connectDnD();
+    this._overviewControls._updateAppDisplayVisibility();
 
     this._settings = null;
     this._vertAppDisplay = null;

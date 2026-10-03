@@ -44,11 +44,14 @@ msgstr "Favoriten anzeigen"
 msgid "Smooth Scrolling"
 msgstr "Flüssiges Scrollen"
 
+msgid "Horizontal Scrolling"
+msgstr "Horizontales Scrollen"
+
 msgid "Customization"
 msgstr "Anpassung"
 
-msgid "Columns"
-msgstr "Spalten"
+msgid "Icons per Row / Column"
+msgstr "Symbole pro Zeile / Spalte"
 
 msgid "Icon Size"
 msgstr "Symbolgröße"

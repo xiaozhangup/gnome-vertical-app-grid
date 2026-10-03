@@ -1,0 +1,20 @@
+.vertical-app-grid-letter {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.16);
+  font-size: 20px;
+  transition-duration: 120ms;
+}
+
+.vertical-app-grid-letter:hover,
+.vertical-app-grid-letter:focus {
+  background-color: rgba(255, 255, 255, 0.30);
+}
+
+.vertical-app-grid-letter:insensitive {
+  color: rgba(255, 255, 255, 0.25);
+  background-color: transparent;
+  box-shadow: none;
+}

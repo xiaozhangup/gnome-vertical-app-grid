@@ -53,6 +53,18 @@ msgstr "最常使用"
 msgid "Alphabetical"
 msgstr "按字母顺序"
 
+msgid "Manual (Drag to Reorder)"
+msgstr "手动（拖拽重排）"
+
+msgid "Jump to Letter"
+msgstr "跳转到字母分组"
+
+msgid "Back to Apps"
+msgstr "返回应用"
+
+msgid "Unnamed Folder"
+msgstr "未命名文件夹"
+
 msgid "As in Dash"
 msgstr "与 Dash 一致"
 
@@ -65,11 +77,14 @@ msgstr "双列分组"
 msgid "Smooth Scrolling"
 msgstr "平滑滚动"
 
+msgid "Horizontal Scrolling"
+msgstr "横向滚动"
+
 msgid "Customization"
 msgstr "自定义"
 
-msgid "Columns"
-msgstr "列数"
+msgid "Icons per Row / Column"
+msgstr "每行/每列图标数"
 
 msgid "Icon Size"
 msgstr "图标大小"

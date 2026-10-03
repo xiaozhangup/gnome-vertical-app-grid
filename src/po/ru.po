@@ -44,11 +44,14 @@ msgstr "Показывать раздел «Избранное»"
 msgid "Smooth Scrolling"
 msgstr "Плавная прокрутка"
 
+msgid "Horizontal Scrolling"
+msgstr "Горизонтальная прокрутка"
+
 msgid "Customization"
 msgstr "Настройка вида"
 
-msgid "Columns"
-msgstr "Количество столбцов"
+msgid "Icons per Row / Column"
+msgstr "Значков в строке / столбце"
 
 msgid "Icon Size"
 msgstr "Размер иконок"
